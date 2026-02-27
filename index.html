@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sveriges Regioner — Geospatial Förmågekarta</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap');
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f4f5f0;--bg-panel:#ffffff;--border:rgba(0,0,0,0.09);
+  --text:#4a5568;--text-dim:#94a3b8;--text-bright:#1a202c;
+  --accent:#2563eb;--accent-dim:#eff6ff;
+  --d1:#db2777;--d1f:#fdf2f8;
+  --d2:#0284c7;--d2f:#f0f9ff;
+  --d3:#d97706;--d3f:#fffbeb;
+  --d4:#059669;--d4f:#ecfdf5;
+  --d5:#7c3aed;--d5f:#f5f3ff;
+  --d6:#ea580c;--d6f:#fff7ed;
+  --cap:#0891b2;--capf:#ecfeff;
+  --proc:#6366f1;--procf:#eef2ff;
+  --p-qw:#16a34a;--p-qwf:#f0fdf4;  /* quick win - green */
+  --p-se:#2563eb;--p-sef:#eff6ff;  /* strategic - blue */
+  --p-sf:#9333ea;--p-sff:#faf5ff;  /* system change - purple */
+}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;overflow:hidden;height:100vh;display:flex}
+#canvas-wrap{flex:1;position:relative;cursor:grab;overflow:hidden}
+#canvas-wrap.dragging{cursor:grabbing}
+svg#viz{width:100%;height:100%;display:block;background:
+  linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);background-size:50px 50px}
+@keyframes pulse-out{0%{r:4;opacity:.7}100%{r:80;opacity:0}}
+.pulse-ring{animation:pulse-out 2.2s ease-out infinite;fill:none;stroke-width:2;pointer-events:none}
+#panel{width:320px;min-width:270px;background:var(--bg-panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;position:relative;z-index:10;box-shadow:-2px 0 12px rgba(0,0,0,0.04)}
+.ps{padding:13px 16px 11px;border-bottom:1px solid var(--border);flex-shrink:0}
+.ps:last-child{border-bottom:none}
+#panel h2{font-size:9.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px}
+.sel-name{font-size:15px;font-weight:600;color:var(--text-bright);line-height:1.35;min-height:20px}
+.sel-desc{font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:6px;min-height:16px}
+.bcrumbs{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin-top:4px;min-height:14px}
+.bcrumbs .crumb{font-size:10.5px;font-weight:500}
+.bcrumbs .sep{font-size:10.5px;opacity:.3;margin:0 1px;color:var(--text-dim)}
+.btn{background:transparent;border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:11.5px;font-weight:500;padding:8px 11px;border-radius:7px;cursor:pointer;transition:all .15s;text-align:left;width:100%;margin-bottom:5px;display:block}
+.btn:last-child{margin-bottom:0}
+.btn:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.tr{display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;user-select:none}
+.tr:hover .tl{color:var(--text-bright)}
+.chk{width:14px;height:14px;border-radius:3px;border:1.5px solid var(--text-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.chk svg{display:none}.tr.active .chk svg{display:block}
+.tl{font-size:11.5px;color:var(--text);line-height:1.3}.tr.active .tl{color:var(--text-bright)}
+.info-box{background:#f8fafc;border:1px solid rgba(0,0,0,0.08);border-radius:9px;padding:12px 13px;margin-bottom:8px}
+.info-hdr{font-size:9.5px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.info-hdr.cap{color:var(--cap)}.info-hdr.dom{color:var(--accent)}.info-hdr.proc{color:var(--proc)}
+.info-items{font-size:11px;color:var(--text-dim);line-height:1.6}
+.info-items b{color:var(--text-bright);font-weight:500}
+.stat-row{display:flex;gap:8px;margin-bottom:4px}
+.stat-box{flex:1;background:#f8fafc;border:1px solid rgba(0,0,0,0.08);border-radius:7px;padding:8px 10px;text-align:center}
+.stat-val{font-size:18px;font-weight:600;color:var(--accent);line-height:1}
+.stat-lbl{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-top:3px}
+.node-group{cursor:pointer}
+.node-group:hover .node-ellipse{filter:brightness(1.15)}
+.node-ellipse{transition:fill .3s,stroke .3s,opacity .3s}
+.node-label{fill:var(--text-bright);font-family:'DM Sans',sans-serif;text-anchor:middle;dominant-baseline:central;pointer-events:none;font-weight:600;transition:opacity .3s}
+.edge{stroke-width:1.2;fill:none;opacity:.3}
+.node-group.selected .node-ellipse{filter:drop-shadow(0 0 10px rgba(37,99,235,.35))}
+.node-group.dimmed .node-ellipse{fill:#f8f9fa!important;stroke:#d1d5db!important;opacity:.35}
+.node-group.dimmed .node-label{opacity:.2;fill:#a0aec0}
+.edge.dimmed{opacity:.05}
+.shared-edge{fill:none;stroke-dasharray:5 4;stroke-width:1.4;opacity:.4;cursor:pointer;transition:opacity .2s,stroke-width .2s}
+.shared-edge:hover{opacity:1;stroke-width:2.2}
+.shared-label{font-family:'DM Sans',sans-serif;font-size:7px;font-weight:500;pointer-events:none;fill:var(--text-dim)}
+#tooltip{position:fixed;background:#fff;border:1px solid rgba(0,0,0,0.12);color:var(--text-bright);font-family:'DM Sans',sans-serif;font-size:12px;padding:10px 14px;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:200;max-width:380px;line-height:1.5;box-shadow:0 4px 24px rgba(0,0,0,.12)}
+#tooltip.vis{opacity:1}
+.ttw{font-size:10.5px;color:var(--text-dim);margin-top:2px}
+.panel-hint{font-size:10px;color:var(--text-dim);line-height:1.65;padding:12px 16px}
+.tr[data-dom="d1"].active .chk{background:var(--d1);border-color:var(--d1)}.tr[data-dom="d1"] .chk{border-color:var(--d1)}
+.tr[data-dom="d2"].active .chk{background:var(--d2);border-color:var(--d2)}.tr[data-dom="d2"] .chk{border-color:var(--d2)}
+.tr[data-dom="d3"].active .chk{background:var(--d3);border-color:var(--d3)}.tr[data-dom="d3"] .chk{border-color:var(--d3)}
+.tr[data-dom="d4"].active .chk{background:var(--d4);border-color:var(--d4)}.tr[data-dom="d4"] .chk{border-color:var(--d4)}
+.tr[data-dom="d5"].active .chk{background:var(--d5);border-color:var(--d5)}.tr[data-dom="d5"] .chk{border-color:var(--d5)}
+.tr[data-dom="d6"].active .chk{background:var(--d6);border-color:var(--d6)}.tr[data-dom="d6"] .chk{border-color:var(--d6)}
+.gen.active .chk{background:var(--cap);border-color:var(--cap)}
+.p-qw.active .chk{background:var(--p-qw);border-color:var(--p-qw)}.p-qw .chk{border-color:var(--p-qw)}
+.p-se.active .chk{background:var(--p-se);border-color:var(--p-se)}.p-se .chk{border-color:var(--p-se)}
+.p-sf.active .chk{background:var(--p-sf);border-color:var(--p-sf)}.p-sf .chk{border-color:var(--p-sf)}
+.prio-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.5px;padding:2px 7px;border-radius:4px;margin-top:4px}
+.prio-badge.qw{background:var(--p-qwf);color:var(--p-qw);border:1px solid rgba(22,163,74,.2)}
+.prio-badge.se{background:var(--p-sef);color:var(--p-se);border:1px solid rgba(37,99,235,.2)}
+.prio-badge.sf{background:var(--p-sff);color:var(--p-sf);border:1px solid rgba(147,51,234,.2)}
+</style>
+</head>
+<body>
+<div id="canvas-wrap"><svg id="viz"></svg></div>
+<div id="tooltip"><div id="tt-main"></div><div id="tt-w" class="ttw"></div></div>
+<div id="panel">
+<div class="ps">
+  <h2>Vald nod</h2>
+  <div class="sel-name" id="sel-name">—</div>
+  <div class="bcrumbs" id="bcrumbs"><span style="color:var(--text-dim);font-size:11px">Klicka på en nod</span></div>
+  <div class="sel-desc" id="sel-desc"></div>
+</div>
+<div class="ps" id="info-panel" style="display:none">
+  <div class="stat-row" id="stat-row"></div>
+  <div class="info-box" id="cap-box" style="display:none">
+    <div class="info-hdr cap">🔧 Plattformsförmågor</div>
+    <div class="info-items" id="cap-info"></div>
+  </div>
+  <div class="info-box" id="dom-box" style="display:none">
+    <div class="info-hdr dom">📋 Kontext</div>
+    <div class="info-items" id="dom-info"></div>
+  </div>
+</div>
+<div class="ps">
+  <h2>Domänfilter</h2>
+  <div class="tr active" data-dom="d1"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🏥 Hälso- och sjukvård</span></div>
+  <div class="tr active" data-dom="d2"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🚌 Kollektivtrafik</span></div>
+  <div class="tr active" data-dom="d3"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🏢 Fastighets- & lokalstrategi</span></div>
+  <div class="tr active" data-dom="d4"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🌍 Regional utveckling</span></div>
+  <div class="tr active" data-dom="d5"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🌿 Miljö, klimat & hållbarhet</span></div>
+  <div class="tr active" data-dom="d6"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🛡️ Beredskap & totalförsvar</span></div>
+</div>
+<div class="ps">
+  <h2>Prioriteringsfilter</h2>
+  <div class="tr p-qw active" data-prio="qw"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">⚡ Quick win</span></div>
+  <div class="tr p-se active" data-prio="se"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🎯 Strategisk effekt</span></div>
+  <div class="tr p-sf active" data-prio="sf"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">🔮 Systemförändring</span></div>
+</div>
+<div class="ps">
+  <h2>Delade förmågor</h2>
+  <div class="tr gen active" id="shared-toggle"><span class="chk"><svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3 5.5L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="tl">Tvärdomänkopplingar</span></div>
+</div>
+<div class="ps">
+  <h2>Åtgärder</h2>
+  <button class="btn" id="btn-reset-exp">↺ Återställ</button>
+  <button class="btn" id="btn-reset-view">⊞ Passa vy</button>
+  <button class="btn" id="btn-expand-all">⊕ Expandera alla</button>
+</div>
+<div class="panel-hint">Scroll=zoom · Dra=panorera · Dubbelklick=passa<br>Klicka nod=expandera/kollapsa</div>
+</div>
+
+<script>
+const CN={kartor:"Professionella kartor",analys:"Geografisk analys & datavetenskap",portaler:"Portaler & informationsprodukter",dashboards:"Dashboards & nulägesbild",appar:"Mobila arbetsflöden",ruttning:"Ruttning & zonindelning",geokod:"Geokodning i X, Y, Z",bilder:"Stora mängder bilder",treD:"3D-visualisering & analys",ai:"AI-bildtolkning & video",iot:"IoT & realtidsdata",bigdata:"Big Data-analys",reality:"Reality capture",geodata:"Lagring & underhåll geodata",cadbim:"CAD/BIM-integration",enterprise:"Enterprise-integration"};
+
+// Helper: capability child node
+function C(pid,idx,label,cap,desc){return{id:`${pid}c${idx}`,label,meta:{type:"cap",cap,desc}}}
+
+const DATA={id:"root",label:"Sveriges\nRegioner",meta:{desc:"6 domäner · 27 behov · 68 processer · 16 förmågor"},children:[
+
+// ═══════════════════════════════════════
+// 1. HÄLSO- OCH SJUKVÅRD
+// ═══════════════════════════════════════
+{id:"d1",label:"Hälso- och\nsjukvård",meta:{dom:"d1",count:"6 behov",desc:"Kapacitetsplanering, tillgänglighet, ambulans, smittspridning, fastighetsbelastning, krisberedskap"},children:[
+
+  {id:"d1b1",label:"Kapacitets-\nplanering",meta:{dom:"d1",desc:"Prognostisera och styra vårdkapacitet geografiskt"},children:[
+    {id:"d1b1p1",label:"Beläggnings-\nkartläggning",meta:{dom:"d1",type:"proc",prio:"qw",desc:"Kartlägger beläggningsgrad per vårdenhet och upptagningsområde i realtid"},children:[
+      C("d1b1p1",1,"Dashboards","dashboards","Realtidsvy över beläggning per vårdenhet — ledningen ser kapacitetsläget utan att ringa runt"),
+      C("d1b1p1",2,"Geokodning","geokod","Kopplar patientdata till vårdenhetens geografi — visar varifrån patienterna kommer och var trycket är störst"),
+      C("d1b1p1",3,"Enterprise","enterprise","Integration med journalsystem — beläggningsdata flödar automatiskt in i kartan utan manuell hantering")
+    ]},
+    {id:"d1b1p2",label:"Vårdtrycks-\nprognos",meta:{dom:"d1",type:"proc",prio:"se",desc:"Modellerar framtida vårdtryck baserat på demografi, säsong och historik"},children:[
+      C("d1b1p2",1,"Analys","analys","Hotspot-analys och prediktiva modeller — identifierar var vårdtrycket ökar innan flaskhalsarna uppstår"),
+      C("d1b1p2",2,"Big Data","bigdata","Analys av historiska patientflöden och säsongsmönster — underlag för dimensionering och bemanning"),
+      C("d1b1p2",3,"Dashboards","dashboards","Scenario-dashboard med prognoser per enhet — beslutsfattare kan simulera effekten av olika åtgärder")
+    ]}
+  ]},
+
+  {id:"d1b2",label:"Tillgänglighet\n& jämlik vård",meta:{dom:"d1",desc:"Analysera och säkerställa geografiskt jämlik vårdtillgång"},children:[
+    {id:"d1b2p1",label:"Restids- och\ntäckningsanalys",meta:{dom:"d1",type:"proc",prio:"qw",desc:"Beräknar hur lång tid invånare har till närmaste vårdenhet och identifierar vita fläckar"},children:[
+      C("d1b2p1",1,"Analys","analys","Restidsanalys som identifierar geografiska vårdgap — visar var medborgare har orimligt lång väg till vård"),
+      C("d1b2p1",2,"Ruttning","ruttning","Beräknar restidszoner runt varje vårdenhet — 30, 60 och 90 minuter med faktiska vägnätet"),
+      C("d1b2p1",3,"Geokodning","geokod","Matchar befolkningsdata till vårdutbud — kvantifierar exakt hur många invånare som nås per tidszon")
+    ]},
+    {id:"d1b2p2",label:"Socioekonomisk\nvårdgapsanalys",meta:{dom:"d1",type:"proc",prio:"se",desc:"Överlagrar socioekonomiska data med vårdtillgång för att avslöja ojämlikhet"},children:[
+      C("d1b2p2",1,"Big Data","bigdata","Kombinerar SCB-data med vårdutnyttjande — avslöjar om socioekonomisk status påverkar tillgången"),
+      C("d1b2p2",2,"Portaler","portaler","Transparensportal med öppna vårdtäckningskartor — stärker demokratisk insyn och dialog med medborgare"),
+      C("d1b2p2",3,"Kartor","kartor","Professionella beslutskartor till regionfullmäktige — visar geografiska skillnader i vårdtillgång")
+    ]}
+  ]},
+
+  {id:"d1b3",label:"Ambulans-\noptimering",meta:{dom:"d1",desc:"Optimera responstider och stationering av prehospitala resurser"},children:[
+    {id:"d1b3p1",label:"Dynamisk ruttning\nvid prio 1-larm",meta:{dom:"d1",type:"proc",prio:"se",desc:"Beräknar snabbaste väg i realtid baserat på trafikläge vid akuta larm"},children:[
+      C("d1b3p1",1,"Ruttning","ruttning","Dynamisk ruttoptimering med live-trafikdata — minimerar responstid genom att beräkna snabbaste väg just nu"),
+      C("d1b3p1",2,"IoT","iot","Realtidsspårning av alla ambulanser — dirigerar närmaste lediga resurs automatiskt till larmplatsen"),
+      C("d1b3p1",3,"Appar","appar","Mobil lägesbild i fordonet — föraren ser navigation, patientinfo och närmaste akutmottagning i samma vy")
+    ]},
+    {id:"d1b3p2",label:"Stationerings-\noptimering",meta:{dom:"d1",type:"proc",prio:"qw",desc:"Analyserar optimal placering av ambulansstationer baserat på larmhistorik och befolkning"},children:[
+      C("d1b3p2",1,"Analys","analys","Geospatial optimering av stationsplacering — maximerar befolkningstäckning inom 8 resp. 20 minuter"),
+      C("d1b3p2",2,"Dashboards","dashboards","Live-dashboard med responstider och täckningsgrad — stöd för operativ och strategisk planering"),
+      C("d1b3p2",3,"Big Data","bigdata","Historisk larmdata analyserad spatialt — avslöjar mönster i var och när larm uppstår per dygn och säsong")
+    ]}
+  ]},
+
+  {id:"d1b4",label:"Smittspridnings-\nanalys",meta:{dom:"d1",desc:"Övervaka och modellera smittspridning för tidiga, riktade insatser"},children:[
+    {id:"d1b4p1",label:"Kluster- och\nutbrottsanalys",meta:{dom:"d1",type:"proc",prio:"se",desc:"Identifierar smitthärdar och modellerar spridningsmönster geografiskt"},children:[
+      C("d1b4p1",1,"Analys","analys","Klusteranalys som identifierar smitthärdar — ger underlag för riktade insatser till drabbade områden"),
+      C("d1b4p1",2,"Geokodning","geokod","Geokodning av fall till områdesnivå — möjliggör spatial analys utan att exponera individdata"),
+      C("d1b4p1",3,"Dashboards","dashboards","Epidemiologisk lägesbild med kartor och trendkurvor — daglig uppföljning för smittskyddsläkaren")
+    ]},
+    {id:"d1b4p2",label:"Folkhälso-\nrapportering",meta:{dom:"d1",type:"proc",prio:"qw",desc:"Publicerar aktuell smittlägesbild till samverkanspartners och allmänhet"},children:[
+      C("d1b4p2",1,"Portaler","portaler","Folkhälsoportal som delar lägesbild med kommuner och vårdgivare — samordnar insatser över gränser"),
+      C("d1b4p2",2,"Big Data","bigdata","Trendanalys med historiska utbrottsmönster — stödjer prediktiva modeller för framtida spridning"),
+      C("d1b4p2",3,"Kartor","kartor","Smittklusterkartor för beslutsunderlag — visualiserar var insatser behövs utan att peka ut individer")
+    ]}
+  ]},
+
+  {id:"d1b5",label:"Fastighets-\nbelastning",meta:{dom:"d1",desc:"Övervaka och optimera nyttjande av vårdfastigheter"},children:[
+    {id:"d1b5p1",label:"Digital tvilling\nvårdfastigheter",meta:{dom:"d1",type:"proc",prio:"sf",desc:"3D-modell av hela fastighetsbeståndet kopplad till driftdata och BIM"},children:[
+      C("d1b5p1",1,"3D","treD","Digital tvilling per våningsplan — visualiserar nyttjandegrad, flöden och funktioner i tre dimensioner"),
+      C("d1b5p1",2,"CAD/BIM","cadbim","Sömlös BIM-integration — kopplar byggnadsritningar till driftdata för helhetsöverblick"),
+      C("d1b5p1",3,"IoT","iot","Sensorer för temperatur, närvaro och energi — realtidsdata om faktisk belastning per rum och system")
+    ]},
+    {id:"d1b5p2",label:"Lokaleffekti-\nviseringsanalys",meta:{dom:"d1",type:"proc",prio:"qw",desc:"Identifierar underutnyttjade lokaler och möjligheter till konsolidering"},children:[
+      C("d1b5p2",1,"Dashboards","dashboards","Nyttjandegrads-dashboard — visar vilka lokaler som är tomma och var konsolidering sparar resurser"),
+      C("d1b5p2",2,"Analys","analys","Behovsanalys kopplat till demografi — prognostiserar vilka lokaler som behövs om 5 och 10 år"),
+      C("d1b5p2",3,"Geodata","geodata","Central fastighetsdatabas — en enda källa till sanning för hela beståndet med avtal, yta och status")
+    ]}
+  ]},
+
+  {id:"d1b6",label:"Kris-\nberedskap",meta:{dom:"d1",desc:"Krisledning och samverkan vid extraordinära händelser"},children:[
+    {id:"d1b6p1",label:"Operativ\nkrisledning",meta:{dom:"d1",type:"proc",prio:"se",desc:"Samlad lägesbild och resursstyrning under pågående kris"},children:[
+      C("d1b6p1",1,"Dashboards","dashboards","Operativ krisdashboard — samlar resursstatus, påverkade enheter och insatser i en gemensam vy"),
+      C("d1b6p1",2,"Portaler","portaler","Samverkansportal med SOS och kommun — gemensam lägesbild under pågående kris"),
+      C("d1b6p1",3,"Appar","appar","Mobilt beslutsstöd för fältpersonal — rapportera status och ta emot uppdrag direkt från händelseplatsen")
+    ]},
+    {id:"d1b6p2",label:"Evakuering och\nresurslokalisering",meta:{dom:"d1",type:"proc",prio:"se",desc:"Planerar evakueringsvägar och lokaliserar resurser i realtid"},children:[
+      C("d1b6p2",1,"Ruttning","ruttning","Evakueringsrutter beräknade dynamiskt — baserat på vilka vägar och anläggningar som är påverkade"),
+      C("d1b6p2",2,"IoT","iot","Sensorer på kritisk infrastruktur — triggers vid elavbrott eller vattenläckor som påverkar vården"),
+      C("d1b6p2",3,"Geokodning","geokod","Resurslokalisering i realtid — visar var personal, material och reservlokaler finns geografiskt")
+    ]}
+  ]}
+]},
+
+// ═══════════════════════════════════════
+// 2. KOLLEKTIVTRAFIK
+// ═══════════════════════════════════════
+{id:"d2",label:"Kollektiv-\ntrafik",meta:{dom:"d2",count:"5 behov",desc:"Linjeoptimering, klimatanpassning, resmönster, robusthet och elektrifiering"},children:[
+
+  {id:"d2b1",label:"Linje-\noptimering",meta:{dom:"d2",desc:"Optimera linjenät och utbud utifrån faktiskt resande"},children:[
+    {id:"d2b1p1",label:"Nätverks- och\nbehovsanalys",meta:{dom:"d2",type:"proc",prio:"se",desc:"Analyserar hur väl linjenätet matchar faktisk efterfrågan och demografisk utveckling"},children:[
+      C("d2b1p1",1,"Analys","analys","Resmönsteranalys som identifierar var linjenätet under- eller överförsörjer — underlag för ny linjestruktur"),
+      C("d2b1p1",2,"Ruttning","ruttning","Beräknar upptagningsområden per hållplats — visar vilka stadsdelar som har god respektive dålig nättäckning"),
+      C("d2b1p1",3,"Big Data","bigdata","Analys av biljettvalideringar och mobildata — avslöjar dolda resmönster och underförsörjda stråk")
+    ]},
+    {id:"d2b1p2",label:"Kapacitets-\nstyrning",meta:{dom:"d2",type:"proc",prio:"qw",desc:"Dimensionerar fordonsinsats och turintervall efter faktisk belastning"},children:[
+      C("d2b1p2",1,"Dashboards","dashboards","Beläggningsdashboard per linje och avgång — visar var kapaciteten behöver ökas eller minskas"),
+      C("d2b1p2",2,"Geodata","geodata","Central nätverksdatabas med linjer, hållplatser och infrastruktur — garanterar att alla arbetar mot samma data"),
+      C("d2b1p2",3,"Enterprise","enterprise","Integration med biljett- och trafiksystem — GIS-data synkas med operativa planeringsverktyg")
+    ]}
+  ]},
+
+  {id:"d2b2",label:"Klimatanpassning\nav infrastruktur",meta:{dom:"d2",desc:"Identifiera och hantera klimatrelaterade sårbarheter i nätet"},children:[
+    {id:"d2b2p1",label:"Sårbarhets-\nanalys av nät",meta:{dom:"d2",type:"proc",prio:"se",desc:"Identifierar vilka sträckor och noder som är mest utsatta vid extremväder"},children:[
+      C("d2b2p1",1,"Analys","analys","Sårbarhetsanalys mot översvämning, skred och extremvärme — pekar ut kritiska punkter i nätet"),
+      C("d2b2p1",2,"Kartor","kartor","Riskkartor som överlagrar klimatscenarier med linjenätet — visuellt beslutsunderlag för investeringar"),
+      C("d2b2p1",3,"IoT","iot","Realtidsväder och sensorer vid utsatta punkter — triggers varning när vattennivåer når kritiska värden")
+    ]},
+    {id:"d2b2p2",label:"Beredskap vid\nstörning",meta:{dom:"d2",type:"proc",prio:"se",desc:"Förbereder alternativa rutter och omledningsplaner som kan aktiveras omedelbart"},children:[
+      C("d2b2p2",1,"Ruttning","ruttning","Förberäknade alternativa rutter per störningsscenario — aktiveras med ett klick vid händelse"),
+      C("d2b2p2",2,"Reality","reality","Drönarinspektion av broar och banvallar efter storm — snabb skadeinventering utan trafikstopp"),
+      C("d2b2p2",3,"Dashboards","dashboards","Robusthetsdashboard som visar aktuell status per sträcka — operatörer ser omedelbart vad som är påverkat")
+    ]}
+  ]},
+
+  {id:"d2b3",label:"Resmönster-\nanalys",meta:{dom:"d2",desc:"Förstå hur, var och när människor reser för bättre utbud"},children:[
+    {id:"d2b3p1",label:"Efterfråge-\nmodellering",meta:{dom:"d2",type:"proc",prio:"sf",desc:"Predikterar framtida resande baserat på bostadsbyggande, arbetsplatser och trender"},children:[
+      C("d2b3p1",1,"Big Data","bigdata","Miljontals biljettransaktioner och GPS-data — avslöjar hur resandet faktiskt ser ut, inte hur vi tror det ser ut"),
+      C("d2b3p1",2,"AI","ai","Prediktiv modell som prognostiserar efterfrågan vid nya bostadsområden — planerare slipper gissa"),
+      C("d2b3p1",3,"Analys","analys","Tidsgeografisk analys — visar hur resmönster varierar mellan morgon/kväll, vardag/helg, sommar/vinter")
+    ]},
+    {id:"d2b3p2",label:"Resenärs-\nuppföljning",meta:{dom:"d2",type:"proc",prio:"qw",desc:"Löpande uppföljning av resandeutveckling per linje, zon och hållplats"},children:[
+      C("d2b3p2",1,"Dashboards","dashboards","Interaktivt dashboard där planerare filtrerar per linje, tid och dag — förstår belastningsmönster direkt"),
+      C("d2b3p2",2,"Geokodning","geokod","Biljettdata kopplat till hållplatser och zoner — möjliggör analys av intäkter och resande per område"),
+      C("d2b3p2",3,"Portaler","portaler","Resenärsportal med realtidsinformation och täckningskartor — ökar kundnöjdhet och transparens")
+    ]}
+  ]},
+
+  {id:"d2b4",label:"Robusthet vid\nstörningar",meta:{dom:"d2",desc:"Hantera störningar i realtid med snabb omledning och information"},children:[
+    {id:"d2b4p1",label:"Realtids-\ntrafikledning",meta:{dom:"d2",type:"proc",prio:"se",desc:"Operativ styrning av trafiken med live-positioner, incidenter och omledning"},children:[
+      C("d2b4p1",1,"IoT","iot","Realtidsspårning av alla fordon — sekundaktuell vy över var varje buss och tåg befinner sig"),
+      C("d2b4p1",2,"Dashboards","dashboards","Live-trafikdashboard som aggregerar fordon, incidenter och förseningar — operatörer agerar snabbt"),
+      C("d2b4p1",3,"Ruttning","ruttning","Dynamisk omledning vid olyckor eller vägarbeten — beräknar alternativ rutt och kommunicerar till förare")
+    ]},
+    {id:"d2b4p2",label:"Fältkommunikation\nvid incident",meta:{dom:"d2",type:"proc",prio:"qw",desc:"Säkerställer att förare och fältpersonal har rätt information vid störning"},children:[
+      C("d2b4p2",1,"Appar","appar","Mobil lägesbild för förare — rapportera incident, ta emot omledning och se alternativa rutter i fält"),
+      C("d2b4p2",2,"Enterprise","enterprise","Integration med trafikledningssystem — GIS-data flödar sömlöst in i befintliga operativa verktyg"),
+      C("d2b4p2",3,"Kartor","kartor","Störningskartor som uppdateras i realtid — ger alla aktörer samma bild av läget")
+    ]}
+  ]},
+
+  {id:"d2b5",label:"Elektrifiering",meta:{dom:"d2",desc:"Planera övergång till eldrift med laddinfrastruktur och kapacitetsanalys"},children:[
+    {id:"d2b5p1",label:"Laddinfrastruktur-\nplanering",meta:{dom:"d2",type:"proc",prio:"se",desc:"Identifierar optimala platser för laddstationer baserat på linjestruktur och energitillgång"},children:[
+      C("d2b5p1",1,"Analys","analys","Energibehovsanalys per linje baserat på topografi och sträcklängd — beräknar var laddstationer ger störst effekt"),
+      C("d2b5p1",2,"3D","treD","3D-analys av depåer och elinfrastruktur — visualiserar kabeldragning och transformatorplacering"),
+      C("d2b5p1",3,"CAD/BIM","cadbim","BIM-integration vid depåombyggnation — kopplar projekteringsmodeller till geospatial nätkapacitetsanalys")
+    ]},
+    {id:"d2b5p2",label:"Energi-\növervakning",meta:{dom:"d2",type:"proc",prio:"sf",desc:"Realtidsuppföljning av laddstatus, förbrukning och kapacitetsutnyttjande"},children:[
+      C("d2b5p2",1,"IoT","iot","Realtidsövervakning av laddstationer och batterier — optimerar laddscheman och identifierar kapacitetsrisker"),
+      C("d2b5p2",2,"Dashboards","dashboards","Energiflödesdashboard med laddstatus och förbrukning — beslutsstöd för elektrifieringsutbyggnad"),
+      C("d2b5p2",3,"Enterprise","enterprise","Integration med energibolag och underhållssystem — kopplar ladddata till elnätets kapacitet")
+    ]}
+  ]}
+]},
+
+// ═══════════════════════════════════════
+// 3. FASTIGHETS- OCH LOKALSTRATEGI
+// ═══════════════════════════════════════
+{id:"d3",label:"Fastighets- och\nlokalstrategi",meta:{dom:"d3",count:"4 behov",desc:"Energioptimering, klimatrisk, lokalförsörjning och investeringar"},children:[
+
+  {id:"d3b1",label:"Energi-\noptimering",meta:{dom:"d3",desc:"Minska energiförbrukning i regionens fastighetsbestånd"},children:[
+    {id:"d3b1p1",label:"Energiprestanda-\nuppföljning",meta:{dom:"d3",type:"proc",prio:"se",desc:"Löpande övervakning av energiförbrukning med automatisk avvikelsedetektering"},children:[
+      C("d3b1p1",1,"IoT","iot","Realtidsövervakning per byggnad — identifierar avvikelser och triggers larm vid onormal förbrukning"),
+      C("d3b1p1",2,"Dashboards","dashboards","Energidashboard per fastighet och portfölj — jämför byggnader och följer upp mot energimål"),
+      C("d3b1p1",3,"Enterprise","enterprise","Integration med energisystem — förbrukningsdata flödar automatiskt in utan manuell inmatning")
+    ]},
+    {id:"d3b1p2",label:"Åtgärds-\nprioritering",meta:{dom:"d3",type:"proc",prio:"sf",desc:"Identifierar och rangordnar energiåtgärder efter kostnad, effekt och klimatpåverkan"},children:[
+      C("d3b1p2",1,"AI","ai","AI-analys av drönartermografi — identifierar värmeläckage automatiskt och pekar ut prioriterade byggnader"),
+      C("d3b1p2",2,"3D","treD","3D-energisimulering per våning — visualiserar var värmeförluster uppstår och vilken effekt åtgärder ger"),
+      C("d3b1p2",3,"CAD/BIM","cadbim","BIM-koppling berikar analysen med byggnadsgeometri och material — möjliggör precisa beräkningar")
+    ]}
+  ]},
+
+  {id:"d3b2",label:"Klimatrisk",meta:{dom:"d3",desc:"Identifiera och hantera klimatrelaterade risker mot fastighetsbeståndet"},children:[
+    {id:"d3b2p1",label:"Sårbarhets-\nbedömning",meta:{dom:"d3",type:"proc",prio:"se",desc:"Kartlägger vilka fastigheter som ligger i riskzoner för översvämning, skred eller värme"},children:[
+      C("d3b2p1",1,"Analys","analys","Överlagrar klimatscenarier med fastighetsdata — identifierar vilka byggnader som är i riskzoner"),
+      C("d3b2p1",2,"3D","treD","3D-riskmodell som visualiserar vattennivåer mot byggnadsgeometri — intuitiv förståelse för sårbarhet"),
+      C("d3b2p1",3,"Bilder","bilder","Satellitbilder och historiska flygfoton — tidsserianalys av dränering och vegetation runt fastigheter")
+    ]},
+    {id:"d3b2p2",label:"Skadeinventering\nefter händelse",meta:{dom:"d3",type:"proc",prio:"sf",desc:"Snabb dokumentation av skador efter klimathändelse för åtgärdsplanering"},children:[
+      C("d3b2p2",1,"Reality","reality","Drönarkartering efter storm — bilder konverteras till punktmoln och ortomosaiker för skadeinventering"),
+      C("d3b2p2",2,"IoT","iot","Realtidsväder och grundvattensensorer — varnar automatiskt när nivåer närmar sig kritiska tröskelvärden"),
+      C("d3b2p2",3,"Appar","appar","Mobil felrapportering i fält — personal dokumenterar skador med foto och position direkt till systemet")
+    ]}
+  ]},
+
+  {id:"d3b3",label:"Lokalförsörjnings-\nplanering",meta:{dom:"d3",desc:"Planera framtida lokalbehov baserat på demografi och verksamhetsutveckling"},children:[
+    {id:"d3b3p1",label:"Behovs- och\nkapacitetsanalys",meta:{dom:"d3",type:"proc",prio:"qw",desc:"Prognostiserar framtida lokalbehov och jämför med befintligt bestånd"},children:[
+      C("d3b3p1",1,"Analys","analys","Demografisk behovsanalys kopplad till lokalkapacitet — visar var överskott och underskott uppstår över tid"),
+      C("d3b3p1",2,"3D","treD","3D-scenariomodellering av ombyggnation — visualiserar alternativ och deras påverkan på kapacitet och flöden"),
+      C("d3b3p1",3,"Dashboards","dashboards","Kapacitetsdashboard med nyttjandegrad och prognoser — strategiskt beslutsunderlag för lokalportföljen")
+    ]},
+    {id:"d3b3p2",label:"Portfölj-\nförvaltning",meta:{dom:"d3",type:"proc",prio:"qw",desc:"Samordnar hela fastighetsbeståndet med avtal, funktion och skick i en vy"},children:[
+      C("d3b3p2",1,"Geodata","geodata","Central lokaldatabas med alla fastigheter, avtal och funktioner — en enda källa till sanning"),
+      C("d3b3p2",2,"CAD/BIM","cadbim","Import av byggnadsmodeller — planerade förändringar kopplas till operativa kartan sömlöst"),
+      C("d3b3p2",3,"Portaler","portaler","Fastighetsportal där verksamheten ser tillgängliga lokaler — minskar dubbelarbete och tomma ytor")
+    ]}
+  ]},
+
+  {id:"d3b4",label:"Investeringar",meta:{dom:"d3",desc:"Beslutsstöd för CAPEX-prioritering och investeringsuppföljning"},children:[
+    {id:"d3b4p1",label:"Investerings-\nprioritering",meta:{dom:"d3",type:"proc",prio:"se",desc:"Rangordnar investeringar baserat på behov, skick, demografi och kostnad"},children:[
+      C("d3b4p1",1,"Analys","analys","Scenario- och prognosanalys som väger demografisk utveckling mot fastigheternas skick"),
+      C("d3b4p1",2,"3D","treD","3D-scenarier som visualiserar hur om- och nybyggnation påverkar kapacitet — styrgrupper jämför visuellt"),
+      C("d3b4p1",3,"Kartor","kartor","Investeringskartor för politiska beslutsunderlag — visar var regionens pengar gör störst nytta")
+    ]},
+    {id:"d3b4p2",label:"Projekt-\nuppföljning",meta:{dom:"d3",type:"proc",prio:"qw",desc:"Följer pågående investeringar med budget, tidplan och status på karta"},children:[
+      C("d3b4p2",1,"Dashboards","dashboards","CAPEX-dashboard med karta — planerade, pågående och avslutade projekt med budget och tidplan"),
+      C("d3b4p2",2,"Enterprise","enterprise","Integration med ekonomisystem — investerings-GIS kopplas till fakturor och projektredovisning"),
+      C("d3b4p2",3,"Reality","reality","Reality capture-uppföljning med drönare — dokumenterar byggprogress och jämför med plan")
+    ]}
+  ]}
+]},
+
+// ═══════════════════════════════════════
+// 4. REGIONAL UTVECKLING & SAMHÄLLSPLANERING
+// ═══════════════════════════════════════
+{id:"d4",label:"Regional utveckling\n& samhällsplanering",meta:{dom:"d4",count:"4 behov",desc:"Näringslivsetableringar, infrastruktur, demografi och landsbygdsutveckling"},children:[
+
+  {id:"d4b1",label:"Näringslivs-\netableringar",meta:{dom:"d4",desc:"Stödja etableringsbeslut och synliggöra regionens konkurrensfördelar"},children:[
+    {id:"d4b1p1",label:"Etablerings-\nanalys",meta:{dom:"d4",type:"proc",prio:"se",desc:"Identifierar optimala lägen för nya verksamheter baserat på tillgänglighet, arbetskraft och marknad"},children:[
+      C("d4b1p1",1,"Analys","analys","Plats- och konkurrensanalys — väger tillgänglighet, arbetskraft och markpriser för optimalt etableringsläge"),
+      C("d4b1p1",2,"Big Data","bigdata","Företags- och sysselsättningsdata på geografisk nivå — avslöjar tillväxttrender och branschstrukturer"),
+      C("d4b1p1",3,"Geokodning","geokod","Geokodning av företagsdata — gör näringslivsstrukturen spatial, inte bara tabeller")
+    ]},
+    {id:"d4b1p2",label:"Regionens\netableringsportal",meta:{dom:"d4",type:"proc",prio:"qw",desc:"Publikt skyltfönster som visar lediga ytor, förutsättningar och klusterkartor"},children:[
+      C("d4b1p2",1,"Portaler","portaler","Näringslivsportal med lediga ytor och etableringsförutsättningar — regionens digitala skyltfönster"),
+      C("d4b1p2",2,"Dashboards","dashboards","Klusterdashboard med branschkoncentrationer och tillväxt — helikopterperspektiv för regionledningen"),
+      C("d4b1p2",3,"Kartor","kartor","Professionella etableringskartor — tryckt och digitalt material för näringslivsevent och investerardialoger")
+    ]}
+  ]},
+
+  {id:"d4b2",label:"Infrastruktur-\nprioritering",meta:{dom:"d4",desc:"Underlag för länsplaner och strategiska infrastrukturinvesteringar"},children:[
+    {id:"d4b2p1",label:"Kapacitets- och\nflaskhalsanalys",meta:{dom:"d4",type:"proc",prio:"se",desc:"Identifierar var infrastrukturen inte räcker till och var investeringar ger störst effekt"},children:[
+      C("d4b2p1",1,"Analys","analys","Trafik- och kapacitetsanalys som identifierar flaskhalsar — underlag för länsplaneprioritering"),
+      C("d4b2p1",2,"Big Data","bigdata","Historisk trafikdata och pendlingsmönster — visar var investeringar ger störst samhällsekonomisk avkastning"),
+      C("d4b2p1",3,"3D","treD","3D-korridormodellering för nya sträckningar — visualiserar landskapspåverkan och markkonflikter")
+    ]},
+    {id:"d4b2p2",label:"Investerings-\nuppföljning",meta:{dom:"d4",type:"proc",prio:"qw",desc:"Följer alla infrastrukturprojekt med status, budget och tidplan på karta"},children:[
+      C("d4b2p2",1,"Dashboards","dashboards","Investeringsdashboard med alla projekt på karta — status, budget och tidplan i en samordnad vy"),
+      C("d4b2p2",2,"CAD/BIM","cadbim","BIM-stöd vid projektering — kopplar konstruktionsmodeller till geospatial kontext"),
+      C("d4b2p2",3,"Enterprise","enterprise","Integration med Trafikverkets och kommunernas system — sömlös datadelning")
+    ]}
+  ]},
+
+  {id:"d4b3",label:"Demografiska\nförändringar",meta:{dom:"d4",desc:"Förstå och prognostisera befolkningsförändringar på detaljerad geografisk nivå"},children:[
+    {id:"d4b3p1",label:"Befolknings-\nprognos",meta:{dom:"d4",type:"proc",prio:"se",desc:"Modellerar befolkningsutveckling per delområde för att dimensionera framtida service"},children:[
+      C("d4b3p1",1,"Analys","analys","Prognos- och segregationsanalys per delområde — visar var servicebehoven ökar eller minskar"),
+      C("d4b3p1",2,"Big Data","bigdata","Socioekonomiska dataset med hundratusentals poster — utbildning, inkomst och ålder kopplat till geografi"),
+      C("d4b3p1",3,"Geokodning","geokod","Geokodning av SCB-data — gör statistik spatial och möjliggör grannskap-för-grannskap-analys")
+    ]},
+    {id:"d4b3p2",label:"Öppen\nstatistikportal",meta:{dom:"d4",type:"proc",prio:"qw",desc:"Publicerar demografisk data till kommuner, forskare och allmänhet"},children:[
+      C("d4b3p2",1,"Portaler","portaler","Statistikportal som öppnar demografisk data för alla — stärker evidensbaserat beslutsfattande"),
+      C("d4b3p2",2,"Dashboards","dashboards","Demografidashboard med interaktiva kartor — beslutsfattare utforskar trender utan beställda rapporter"),
+      C("d4b3p2",3,"Kartor","kartor","Befolkningskartor till regionala utvecklingsstrategin — visualiserar mönster för politisk dialog")
+    ]}
+  ]},
+
+  {id:"d4b4",label:"Landsbygds-\nutveckling",meta:{dom:"d4",desc:"Stärka förutsättningarna för boende, service och näringsliv utanför tätorter"},children:[
+    {id:"d4b4p1",label:"Tillgänglighets-\nanalys",meta:{dom:"d4",type:"proc",prio:"qw",desc:"Mäter avstånd till service, jobb och utbildning från landsbygdsperspektiv"},children:[
+      C("d4b4p1",1,"Analys","analys","Tillgänglighetsanalys som kvantifierar landsbygdens villkor — avstånd till service, jobb och utbildning"),
+      C("d4b4p1",2,"Ruttning","ruttning","Restidszoner och funktionella arbetsmarknadsregioner — visar var bredband, vägar och kollektivtrafik behöver stärkas"),
+      C("d4b4p1",3,"Kartor","kartor","Servicestrukturkartor med bredbandstäckning och naturresurser — underlag för landsbygdspolitik")
+    ]},
+    {id:"d4b4p2",label:"Grön infrastruktur\n& resurser",meta:{dom:"d4",type:"proc",prio:"se",desc:"Kartlägger naturresurser, turismvärden och grön infrastruktur som utvecklingstillgångar"},children:[
+      C("d4b4p2",1,"Geodata","geodata","Regional geodatabas med mark- och vattenresurser — grunddata som alla landsbygdsanalyser vilar på"),
+      C("d4b4p2",2,"Portaler","portaler","Planeringsportal med naturvärden, turism och lokala resurser — gemensam plattform för samverkan"),
+      C("d4b4p2",3,"Bilder","bilder","Satellitarkiv för övervakning av markanvändning — tidsserier som visar förändring i det rurala landskapet")
+    ]}
+  ]}
+]},
+
+// ═══════════════════════════════════════
+// 5. MILJÖ, KLIMAT OCH HÅLLBARHET
+// ═══════════════════════════════════════
+{id:"d5",label:"Miljö, klimat\n& hållbarhet",meta:{dom:"d5",count:"4 behov",desc:"Utsläppsanalys, naturvärden, klimatanpassning och uppföljning mot mål"},children:[
+
+  {id:"d5b1",label:"Utsläpps-\nanalys",meta:{dom:"d5",desc:"Kartlägga och följa upp regionens klimatpåverkan"},children:[
+    {id:"d5b1p1",label:"Utsläppskart-\nläggning",meta:{dom:"d5",type:"proc",prio:"qw",desc:"Bryter ner regionens klimatpåverkan per kommun, bransch och transportslag"},children:[
+      C("d5b1p1",1,"Analys","analys","Sektorsanalys per kommun och bransch — visar exakt var i regionen åtgärderna biter mest"),
+      C("d5b1p1",2,"Big Data","bigdata","Stora klimatdataset som kombinerar nationell statistik med lokala mätningar — detaljerad utsläppsbild"),
+      C("d5b1p1",3,"Kartor","kartor","Utsläppskartor per sektor och geografi — beslutsunderlag för klimatpolitik och kommunikation")
+    ]},
+    {id:"d5b1p2",label:"Klimatbudget-\nuppföljning",meta:{dom:"d5",type:"proc",prio:"se",desc:"Följer upp regionens utsläpp mot klimatbudget i realtid"},children:[
+      C("d5b1p2",1,"Dashboards","dashboards","Utsläppsdashboard med trendkurvor — följer regionens klimatbudget mot uppsatta mål i realtid"),
+      C("d5b1p2",2,"AI","ai","AI-markklassning från satellitdata — identifierar automatiskt markanvändningsförändringar som påverkar kolbudgeten"),
+      C("d5b1p2",3,"Enterprise","enterprise","Integration med rapporteringssystem — automatiserar datainsamling för CSRD och nationella miljömål")
+    ]}
+  ]},
+
+  {id:"d5b2",label:"Naturvärden",meta:{dom:"d5",desc:"Inventera och skydda regionens ekologiska värden"},children:[
+    {id:"d5b2p1",label:"Ekologisk\nkonnektivitetsanalys",meta:{dom:"d5",type:"proc",prio:"sf",desc:"Modellerar gröna korridorer mellan habitat och visar var fragmentering kan brytas"},children:[
+      C("d5b2p1",1,"Analys","analys","Konnektivitetsmodellering som visar var naturvärden kan stärkas genom strategisk markanvändning"),
+      C("d5b2p1",2,"AI","ai","AI-klassificering av naturtyper från fjärranalysdata — automatiserar inventering som annars tar veckor"),
+      C("d5b2p1",3,"Geodata","geodata","Central miljödatabas med naturtyper och artförekomster — auktoritativ källa för grönstrukturanalyser")
+    ]},
+    {id:"d5b2p2",label:"Naturvärdes-\ninventering",meta:{dom:"d5",type:"proc",prio:"sf",desc:"Kartläggning och övervakning av skyddsvärda naturområden med fjärranalys"},children:[
+      C("d5b2p2",1,"Bilder","bilder","Satellitarkiv för vegetationsövervakning — tidsserianalys avslöjar hotade naturvärden innan det är för sent"),
+      C("d5b2p2",2,"Reality","reality","Drönarkartering av skyddsvärda områden — högupplösta modeller för inventering och uppföljning"),
+      C("d5b2p2",3,"Appar","appar","Fältinventeringsapp — biologer registrerar arter, naturtyper och skyddsvärden direkt med position och foto")
+    ]}
+  ]},
+
+  {id:"d5b3",label:"Klimat-\nanpassning",meta:{dom:"d5",desc:"Förbereda regionen för klimatförändringens konsekvenser"},children:[
+    {id:"d5b3p1",label:"Regional\nriskmodellering",meta:{dom:"d5",type:"proc",prio:"se",desc:"Simulerar effekterna av skyfall, havsnivåhöjning och värmeöar på samhällsfunktioner"},children:[
+      C("d5b3p1",1,"Analys","analys","Sårbarhetsanalys som överlagrar klimatscenarier med samhällsfunktioner — visar vad som är mest exponerat"),
+      C("d5b3p1",2,"3D","treD","3D-riskmodell med simulerad vattennivåhöjning och värmeöar — intuitiv förståelse för framtida risker"),
+      C("d5b3p1",3,"IoT","iot","Realtidsväderdata och miljösensorer — triggers vid extremvärden kopplat till beredskapsplaner")
+    ]},
+    {id:"d5b3p2",label:"Skadeinventering\nefter händelse",meta:{dom:"d5",type:"proc",prio:"sf",desc:"Snabb kartläggning av klimatrelaterade skador för åtgärdsplanering"},children:[
+      C("d5b3p2",1,"Reality","reality","Drönaruppdatering efter skyfall eller skred — bilddata konverteras till analyserbara modeller inom timmar"),
+      C("d5b3p2",2,"Bilder","bilder","Före- och efterbilder från satellit — dokumenterar förändring och stödjer skadereglering och planering"),
+      C("d5b3p2",3,"Dashboards","dashboards","Klimatriskdashboard som samlar händelser och skador — underlag för regional anpassningsstrategi")
+    ]}
+  ]},
+
+  {id:"d5b4",label:"Uppföljning\nmot mål",meta:{dom:"d5",desc:"Systematisk uppföljning av miljö- och klimatmål på regional nivå"},children:[
+    {id:"d5b4p1",label:"KPI-uppföljning\noch rapportering",meta:{dom:"d5",type:"proc",prio:"qw",desc:"Automatiserad uppföljning av klimat- och miljöindikatorer med kartor och trendkurvor"},children:[
+      C("d5b4p1",1,"Dashboards","dashboards","KPI-dashboard som visar framsteg mot miljömål — automatiserad uppföljning med kartor och trendkurvor"),
+      C("d5b4p1",2,"Big Data","bigdata","Analys av långtidsdata och trender — identifierar om insatserna ger effekt eller om kursen behöver justeras"),
+      C("d5b4p1",3,"Enterprise","enterprise","Integration med rapporteringssystem — automatiserar datainsamling och rapportgenerering för CSRD/ESG")
+    ]},
+    {id:"d5b4p2",label:"Transparent\nmålredovisning",meta:{dom:"d5",type:"proc",prio:"qw",desc:"Öppen redovisning av måluppfyllnad till kommuner, näringsliv och allmänhet"},children:[
+      C("d5b4p2",1,"Portaler","portaler","Uppföljningsportal som delar indikatorer med kommuner och allmänhet — transparens och samordning"),
+      C("d5b4p2",2,"Kartor","kartor","Indikatorkartor som visualiserar måluppfyllnad per kommun — underlag för politisk dialog och årsredovisning"),
+      C("d5b4p2",3,"Geokodning","geokod","Kopplar miljöindikatorer till geografi — gör det möjligt att se exakt var målen nås och var de inte gör det")
+    ]}
+  ]}
+]},
+
+// ═══════════════════════════════════════
+// 6. BEREDSKAP OCH TOTALFÖRSVAR
+// ═══════════════════════════════════════
+{id:"d6",label:"Beredskap &\ntotalförsvar",meta:{dom:"d6",count:"4 behov",desc:"Kritisk infrastruktur, resiliens, samordning och situationsbild"},children:[
+
+  {id:"d6b1",label:"Kritisk\ninfrastruktur",meta:{dom:"d6",desc:"Förstå och hantera beroenden i samhällsviktiga system"},children:[
+    {id:"d6b1p1",label:"Beroendeanalys\noch kaskadeffekter",meta:{dom:"d6",type:"proc",prio:"sf",desc:"Modellerar hur bortfall i ett system sprider sig till andra — avslöjar dolda systemrisker"},children:[
+      C("d6b1p1",1,"Analys","analys","Nätverks- och kaskadanalys — avslöjar dolda beroenden mellan el, vatten, tele och transport"),
+      C("d6b1p1",2,"3D","treD","3D-modell av infrastrukturnät — visualiserar beroenden och kritiska noder rumsligt"),
+      C("d6b1p1",3,"AI","ai","AI-baserad sårbarhetsanalys — identifierar mönster i incidentdata och predikterar störningspunkter")
+    ]},
+    {id:"d6b1p2",label:"Infrastruktur-\növervakning",meta:{dom:"d6",type:"proc",prio:"se",desc:"Löpande realtidsstatus på samhällskritiska system med automatisk varning"},children:[
+      C("d6b1p2",1,"IoT","iot","Realtidsstatus på kritisk infrastruktur via sensorer — omedelbar varning vid driftstörning"),
+      C("d6b1p2",2,"Dashboards","dashboards","Beroendedashboard som visar status per system — operatörer ser hela kedjan, inte bara sin del"),
+      C("d6b1p2",3,"Geodata","geodata","Infrastrukturdatabas med alla samhällsviktiga anläggningar — auktoritativt register för beredskapsplanering")
+    ]}
+  ]},
+
+  {id:"d6b2",label:"Resiliens",meta:{dom:"d6",desc:"Säkerställa kontinuitet i samhällsviktiga funktioner"},children:[
+    {id:"d6b2p1",label:"Kontinuitets-\nplanering",meta:{dom:"d6",type:"proc",prio:"se",desc:"Identifierar alternativa driftplatser och reservplaner för varje samhällsviktig funktion"},children:[
+      C("d6b2p1",1,"Analys","analys","Kritikalitetsanalys som rangordnar samhällsviktiga funktioner — vad måste upprätthållas först?"),
+      C("d6b2p1",2,"3D","treD","3D-beroendemodell som visualiserar hur funktioner hänger ihop rumsligt — underlättar reservplanering"),
+      C("d6b2p1",3,"Enterprise","enterprise","Integration med personalregister, lokaler och fordon — beredskapsdata alltid synkroniserad med verkligheten")
+    ]},
+    {id:"d6b2p2",label:"Samverkans-\nplattform",meta:{dom:"d6",type:"proc",prio:"qw",desc:"Delar beredskapsplaner, kontakter och resurser mellan region, kommun och stat"},children:[
+      C("d6b2p2",1,"Portaler","portaler","Samverkansportal mellan region och kommuner — delar planer, kontakter och resurser i en gemensam miljö"),
+      C("d6b2p2",2,"Dashboards","dashboards","Kontinuitetsdashboard med status för reservplaner och beredskapsläge — samlad vy för beredskapssamordnaren"),
+      C("d6b2p2",3,"Geodata","geodata","Central beredskapsdatabas — samlar resurser, skyddsrum, reservlokaler och kontakter geografiskt")
+    ]}
+  ]},
+
+  {id:"d6b3",label:"Samordning",meta:{dom:"d6",desc:"Gemensam bild och koordinering mellan alla aktörer vid kris"},children:[
+    {id:"d6b3p1",label:"Gemensam\nlägesbild",meta:{dom:"d6",type:"proc",prio:"qw",desc:"Aggregerar information från multipla aktörer till en samsyn under kris"},children:[
+      C("d6b3p1",1,"Dashboards","dashboards","Gemensam dashboard som samlar data från region, kommun och myndigheter — samsyn oavsett organisation"),
+      C("d6b3p1",2,"Portaler","portaler","Krisportal för informationsdelning — alla aktörer ser samma lägesbild och uppdaterar i realtid"),
+      C("d6b3p1",3,"Enterprise","enterprise","Integration med WIS, LUPP och Rakel — GIS-data flödar in i befintliga samordningsverktyg utan dubbelarbete")
+    ]},
+    {id:"d6b3p2",label:"Evakuerings-\nplanering",meta:{dom:"d6",type:"proc",prio:"se",desc:"Modellerar evakueringsscenarier med ruttoptimering och kapacitetsberäkning"},children:[
+      C("d6b3p2",1,"Ruttning","ruttning","Evakueringsrutter med kapacitetsberäkning — modellerar hur befolkning förflyttas säkert vid olika scenarier"),
+      C("d6b3p2",2,"Analys","analys","Scenarioanalys som simulerar olika krisförlopp — testar om evakueringsplanerna håller under stress"),
+      C("d6b3p2",3,"Appar","appar","Mobil fältapp för personal under kris — rapportera position, status och bilder till centrala lägesbilden")
+    ]}
+  ]},
+
+  {id:"d6b4",label:"Situations-\nbild",meta:{dom:"d6",desc:"Operativ realtidsbild som samlar alla händelser, resurser och påverkan"},children:[
+    {id:"d6b4p1",label:"Operativt\nkrisrum",meta:{dom:"d6",type:"proc",prio:"se",desc:"Den centrala vyn i regionens krisrum med händelser, resurser och insatser i realtid"},children:[
+      C("d6b4p1",1,"Dashboards","dashboards","Operativ realtidsdashboard — den centrala skärmen i krisrummet med all information samlad"),
+      C("d6b4p1",2,"IoT","iot","Sensordata från infrastruktur, väder och trafik — bygger en levande situationsbild som uppdateras kontinuerligt"),
+      C("d6b4p1",3,"AI","ai","AI-incidentdetektion från kameror och sensorer — varnar innan operatören hinner reagera manuellt")
+    ]},
+    {id:"d6b4p2",label:"Fält- och\ndrönarstöd",meta:{dom:"d6",type:"proc",prio:"sf",desc:"Ger personal på plats tillgång till situationsbilden och snabb kartuppdatering via drönare"},children:[
+      C("d6b4p2",1,"Reality","reality","Drönarbilder konverteras till aktuella kartor och 3D-modeller direkt på plats — minuter istället för dagar"),
+      C("d6b4p2",2,"Appar","appar","Fältapp med hela situationsbilden — rapportera, fotografera och navigera med samma verktyg"),
+      C("d6b4p2",3,"Kartor","kartor","Snabbpublicerade situationskartor från fältdata — delas omedelbart med alla aktörer i samverkan")
+    ]}
+  ]}
+]}
+]};
+
+// Cross-domain shared capabilities
+const SHARED=[
+  {from:"d1b6p1c1",to:"d6b4p1c1",label:"Krisdashboard"},
+  {from:"d1b3p1c1",to:"d2b4p1c3",label:"Ruttoptimering"},
+  {from:"d1b6p2c1",to:"d6b3p2c1",label:"Evakuering"},
+  {from:"d3b1p1c1",to:"d2b5p2c1",label:"Energi-IoT"},
+  {from:"d3b3p1c2",to:"d6b1p1c2",label:"3D-infrastruktur"},
+  {from:"d1b5p1c1",to:"d3b3p1c2",label:"Digital tvilling"},
+  {from:"d5b3p1c1",to:"d3b2p1c1",label:"Klimatriskanalys"},
+  {from:"d4b3p1c1",to:"d1b1p2c1",label:"Demografisk prognos"},
+  {from:"d5b2p1c2",to:"d6b1p1c3",label:"AI-bildtolkning"},
+  {from:"d2b3p1c1",to:"d4b1p1c2",label:"Mobilitetsmönster"},
+  {from:"d6b2p2c1",to:"d1b6p1c2",label:"Samverkansportal"},
+  {from:"d5b3p2c1",to:"d2b2p2c2",label:"Reality capture"},
+];
+
+const DOM_COLORS={d1:{stroke:'var(--d1)',fill:'var(--d1f)'},d2:{stroke:'var(--d2)',fill:'var(--d2f)'},d3:{stroke:'var(--d3)',fill:'var(--d3f)'},d4:{stroke:'var(--d4)',fill:'var(--d4f)'},d5:{stroke:'var(--d5)',fill:'var(--d5f)'},d6:{stroke:'var(--d6)',fill:'var(--d6f)'}};
+
+// VISUAL CONFIG — 5 depths: root, domain, need, process, capability
+const DCFG=[
+  {rx:82,ry:34,fs:12.5,arm:0},   // 0: root
+  {rx:66,ry:26,fs:10.5,arm:225},  // 1: domain
+  {rx:52,ry:20,fs:9.5,arm:175},   // 2: need
+  {rx:48,ry:18,fs:8.5,arm:155},   // 3: process
+  {rx:36,ry:14,fs:7.5,arm:120},   // 4: capability
+];
+function dcfg(d){return DCFG[Math.min(d,DCFG.length-1)]}
+
+// STATE
+let expandedIds=new Set(),selectedId=null;
+const domVis={d1:true,d2:true,d3:true,d4:true,d5:true,d6:true};
+let showShared=true;
+const prioVis={qw:true,se:true,sf:true};
+let nodeMap={};
+let vb={x:-600,y:-500,w:1200,h:1000};
+
+function enrich(n,p,d){n.depth=d;n.parent=p;n.x=0;n.y=0;nodeMap[n.id]=n;if(n.children)n.children.forEach(c=>enrich(c,n,d+1))}
+enrich(DATA,null,0);
+
+function getDom(id){const n=nodeMap[id];if(!n)return null;if(n.meta?.dom)return n.meta.dom;if(n.parent)return getDom(n.parent.id);return null}
+function domColor(dom){return DOM_COLORS[dom]||{stroke:'var(--accent)',fill:'var(--accent-dim)'}}
+
+function countV(n){if(!n.children||!expandedIds.has(n.id))return 1;return 1+n.children.reduce((s,c)=>s+countV(c),0)}
+function layout(){DATA.x=0;DATA.y=0;if(expandedIds.has(DATA.id))ring(DATA,-Math.PI,Math.PI)}
+function ring(parent,ss,se){
+  if(!parent.children||!expandedIds.has(parent.id))return;
+  const kids=parent.children,cd=parent.depth+1,dcc=dcfg(cd),dcp=dcfg(parent.depth),ts=se-ss;
+  let arm=Math.max(dcc.arm,dcp.rx+dcc.rx+30);
+  const ns=2*dcc.rx+14,ma=ns/arm;
+  if(ma*kids.length>ts)arm=(ma*kids.length*arm)/ts;
+  const wts=kids.map(c=>countV(c)),tw=wts.reduce((a,b)=>a+b,0);
+  let arcs=wts.map(w=>Math.max((w/tw)*ts,ma));
+  const as2=arcs.reduce((a,b)=>a+b,0);arcs=arcs.map(a=>a*(ts/as2));
+  let ang=ss;
+  kids.forEach((child,i)=>{const arc=arcs[i],mid=ang+arc/2;child.x=parent.x+arm*Math.cos(mid);child.y=parent.y+arm*Math.sin(mid);if(expandedIds.has(child.id)&&child.children)ring(child,ang,ang+arc);ang+=arc});
+}
+function collectV(n,out){out.push(n);if(n.children&&expandedIds.has(n.id))n.children.forEach(c=>collectV(c,out))}
+function fitVB(){const vis=[];collectV(DATA,vis);if(vis.length<=1){vb={x:-600,y:-500,w:1200,h:1000};return}let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;vis.forEach(n=>{const c=dcfg(n.depth);x0=Math.min(x0,n.x-c.rx-25);x1=Math.max(x1,n.x+c.rx+25);y0=Math.min(y0,n.y-c.ry-25);y1=Math.max(y1,n.y+c.ry+25)});vb={x:x0-70,y:y0-70,w:x1-x0+140,h:y1-y0+140}}
+function getPath(id){const ids=[];let n=nodeMap[id];while(n){ids.unshift(n.id);n=n.parent}return ids}
+function toggleExp(id){const n=nodeMap[id];if(!n.children||!n.children.length)return;if(expandedIds.has(id))collSub(id);else expandedIds.add(id)}
+function collSub(id){expandedIds.delete(id);const n=nodeMap[id];if(n.children)n.children.forEach(c=>collSub(c.id))}
+function resetExp(){expandedIds.clear();selectedId=null;renderFit();updatePanel()}
+function expandAll(){function expR(n){expandedIds.add(n.id);if(n.children)n.children.forEach(c=>expR(c))}expR(DATA);renderFit()}
+
+const svg=document.getElementById('viz'),NS='http://www.w3.org/2000/svg';
+function applyVB(){svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`)}
+function render(){layout();draw()}
+function renderFit(){layout();fitVB();draw()}
+
+function draw(){
+  svg.innerHTML='';
+  const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',-1e5);bg.setAttribute('y',-1e5);bg.setAttribute('width',2e5);bg.setAttribute('height',2e5);bg.setAttribute('fill','transparent');
+  bg.addEventListener('click',()=>{selectedId=null;render();updatePanel()});svg.appendChild(bg);
+  const vis=[];collectV(DATA,vis);const visSet=new Set(vis.map(n=>n.id));
+  const anyFilter=Object.values(domVis).some(v=>!v);
+  function getPrio(id){const n=nodeMap[id];if(!n)return null;if(n.meta?.prio)return n.meta.prio;if(n.parent)return getPrio(n.parent.id);return null}
+  function prioColor(p){return p==='qw'?'var(--p-qw)':p==='se'?'var(--p-se)':p==='sf'?'var(--p-sf)':null}
+  const anyPrioFilter=!prioVis.qw||!prioVis.se||!prioVis.sf;
+  function isDimmed(node){
+    const d=getDom(node.id);
+    const domDim=anyFilter&&d?!domVis[d]:false;
+    const p=getPrio(node.id);
+    const prioDim=anyPrioFilter&&p?!prioVis[p]:false;
+    return domDim||prioDim;
+  }
+
+  // Edges
+  vis.forEach(node=>{if(!node.parent||!visSet.has(node.parent.id))return;const ln=document.createElementNS(NS,'line');ln.setAttribute('x1',node.parent.x);ln.setAttribute('y1',node.parent.y);ln.setAttribute('x2',node.x);ln.setAttribute('y2',node.y);const dc=domColor(getDom(node.id));ln.setAttribute('stroke',dc.stroke);ln.setAttribute('class','edge'+(isDimmed(node)?' dimmed':''));svg.appendChild(ln)});
+
+  // Shared edges
+  if(showShared){SHARED.forEach(dep=>{if(!visSet.has(dep.from)||!visSet.has(dep.to))return;const A=nodeMap[dep.from],B=nodeMap[dep.to];const mx=(A.x+B.x)/2,my=(A.y+B.y)/2,dx=B.x-A.x,dy=B.y-A.y,len=Math.sqrt(dx*dx+dy*dy)||1,cv=Math.min(len*0.3,90),cpx=mx-dy/len*cv,cpy=my+dx/len*cv;const path=document.createElementNS(NS,'path');path.setAttribute('d',`M${A.x},${A.y} Q${cpx},${cpy} ${B.x},${B.y}`);path.setAttribute('class','shared-edge');path.setAttribute('stroke','var(--cap)');path.addEventListener('mouseenter',e=>{document.getElementById('tt-main').textContent=dep.label;document.getElementById('tt-w').textContent=`${nodeMap[dep.from]?.label.replace(/\n/g,' ')} ↔ ${nodeMap[dep.to]?.label.replace(/\n/g,' ')}`;tt.classList.add('vis');moveTT(e)});path.addEventListener('mousemove',e=>moveTT(e));path.addEventListener('mouseleave',()=>tt.classList.remove('vis'));svg.appendChild(path);const t=.5,lx=(1-t)*(1-t)*A.x+2*(1-t)*t*cpx+t*t*B.x,ly=(1-t)*(1-t)*A.y+2*(1-t)*t*cpy+t*t*B.y;const lbl=document.createElementNS(NS,'text');lbl.setAttribute('x',lx);lbl.setAttribute('y',ly);lbl.setAttribute('class','shared-label');lbl.setAttribute('text-anchor','middle');lbl.textContent=dep.label;svg.appendChild(lbl)})}
+
+  // Nodes
+  vis.forEach(node=>{
+    const cfg=dcfg(node.depth),dim=isDimmed(node),sel=node.id===selectedId,dom=getDom(node.id),dc=domColor(dom);
+    const isCap=node.meta?.type==='cap',isProc=node.meta?.type==='proc';
+    const g=document.createElementNS(NS,'g');g.setAttribute('class','node-group'+(sel?' selected':'')+(dim?' dimmed':''));g.dataset.id=node.id;
+    const el=document.createElementNS(NS,'ellipse');el.setAttribute('cx',node.x);el.setAttribute('cy',node.y);el.setAttribute('rx',cfg.rx);el.setAttribute('ry',cfg.ry);
+    let stroke=dc.stroke||'var(--accent)',fill=dc.fill||'var(--accent-dim)';
+    if(node.depth===0){stroke='var(--accent)';fill='var(--accent-dim)'}
+    if(isProc){
+      const pr=node.meta?.prio;
+      if(pr==='qw'){stroke='var(--p-qw)';fill='var(--p-qwf)'}
+      else if(pr==='se'){stroke='var(--p-se)';fill='var(--p-sef)'}
+      else if(pr==='sf'){stroke='var(--p-sf)';fill='var(--p-sff)'}
+      else{stroke='var(--proc)';fill='var(--procf)'}
+    }
+    if(isCap){stroke='var(--cap)';fill='var(--capf)'}
+    el.setAttribute('fill',fill);el.setAttribute('stroke',stroke);el.setAttribute('stroke-width',sel?2.8:1.5);el.setAttribute('class','node-ellipse');g.appendChild(el);
+    if(node.children&&node.children.length){const dot=document.createElementNS(NS,'circle');dot.setAttribute('cx',node.x+cfg.rx-5);dot.setAttribute('cy',node.y-cfg.ry+5);dot.setAttribute('r',2.5);dot.setAttribute('fill',expandedIds.has(node.id)?stroke:'transparent');dot.setAttribute('stroke',stroke);dot.setAttribute('stroke-width','1');dot.setAttribute('opacity','0.8');g.appendChild(dot)}
+    const fs=cfg.fs,lines=node.label.split('\n');const txt=document.createElementNS(NS,'text');txt.setAttribute('class','node-label');txt.setAttribute('font-size',fs);
+    if(isCap)txt.setAttribute('fill','var(--cap)');if(isProc){const pr=node.meta?.prio;txt.setAttribute('fill',pr==='qw'?'var(--p-qw)':pr==='se'?'var(--p-se)':pr==='sf'?'var(--p-sf)':'var(--proc)');}
+    const lh=fs*1.25,th=lines.length*lh,sy=node.y-th/2+lh/2;
+    lines.forEach((l,li)=>{const ts=document.createElementNS(NS,'tspan');ts.setAttribute('x',node.x);ts.setAttribute('y',sy+li*lh);ts.textContent=l;txt.appendChild(ts)});g.appendChild(txt);
+
+    g.addEventListener('mouseenter',e=>{const m=node.meta||{};let main=node.label.replace(/\n/g,' '),sub='';if(isCap&&m.cap){main=CN[m.cap]||main;sub=m.desc||'Plattformsförmåga'}
+      else if(isProc&&m.prio){const pl={qw:'⚡ Quick win',se:'🎯 Strategisk effekt',sf:'🔮 Systemförändring'};sub=(m.desc||'')+' — '+pl[m.prio]}
+      else if(m.desc){sub=m.desc}else if(m.count){sub=m.count}document.getElementById('tt-main').textContent=main;document.getElementById('tt-w').textContent=sub;tt.classList.add('vis');moveTT(e)});
+    g.addEventListener('mousemove',e=>moveTT(e));g.addEventListener('mouseleave',()=>tt.classList.remove('vis'));
+    g.addEventListener('click',onNode);svg.appendChild(g);
+  });
+
+  if(selectedId&&visSet.has(selectedId)){const sn=nodeMap[selectedId];const ring=document.createElementNS(NS,'circle');ring.setAttribute('cx',sn.x);ring.setAttribute('cy',sn.y);ring.setAttribute('r','4');const m=nodeMap[selectedId].meta;ring.setAttribute('stroke',m?.type==='cap'?'var(--cap)':m?.type==='proc'?(m?.prio==='qw'?'var(--p-qw)':m?.prio==='se'?'var(--p-se)':m?.prio==='sf'?'var(--p-sf)':'var(--proc)'):domColor(getDom(selectedId)).stroke);ring.setAttribute('class','pulse-ring');svg.appendChild(ring)}
+  applyVB();
+}
+
+const tt=document.getElementById('tooltip');
+function moveTT(e){tt.style.left=(e.clientX+14)+'px';tt.style.top=(e.clientY-10)+'px'}
+
+function onNode(e){e.stopPropagation();const id=e.currentTarget.dataset.id;selectedId=id;toggleExp(id);if(expandedIds.has(id))renderFit();else render();updatePanel()}
+
+function updatePanel(){
+  const nm=document.getElementById('sel-name'),bc=document.getElementById('bcrumbs'),desc=document.getElementById('sel-desc');
+  const infoPanel=document.getElementById('info-panel'),capBox=document.getElementById('cap-box'),domBox=document.getElementById('dom-box'),statRow=document.getElementById('stat-row');
+  if(!selectedId){nm.textContent='—';bc.innerHTML='<span style="color:var(--text-dim);font-size:11px">Klicka på en nod</span>';desc.textContent='';infoPanel.style.display='none';return}
+  const node=nodeMap[selectedId];nm.textContent=node.label.replace(/\n/g,' ');
+  const path=getPath(selectedId);
+  bc.innerHTML=path.map((pid,i)=>{const n=nodeMap[pid],m=n.meta;const col=m?.type==='cap'?'var(--cap)':m?.type==='proc'?(m?.prio==='qw'?'var(--p-qw)':m?.prio==='se'?'var(--p-se)':m?.prio==='sf'?'var(--p-sf)':'var(--proc)'):domColor(getDom(pid)).stroke;return`<span class="crumb" style="color:${col}">${n.label.replace(/\n/g,' ')}</span>`+(i<path.length-1?'<span class="sep">›</span>':'')}).join('');
+  const m=node.meta||{};
+
+  if(m.type==='cap'&&m.cap){
+    desc.textContent=m.desc||'';infoPanel.style.display='block';statRow.innerHTML='';
+    let cnt=0;const usedIn=[];
+    function sc(n){if(n.meta?.type==='cap'&&n.meta.cap===m.cap&&n.id!==selectedId){cnt++;if(n.parent)usedIn.push(n.parent.label.replace(/\n/g,' '))}if(n.children)n.children.forEach(c=>sc(c))}sc(DATA);
+    statRow.innerHTML=`<div class="stat-box"><div class="stat-val">${cnt+1}</div><div class="stat-lbl">Processer</div></div>`;
+    capBox.style.display='block';let h=`<b>${CN[m.cap]}</b><br><br><b style="color:var(--text)">I denna process:</b><br>${m.desc}`;
+    if(usedIn.length>0){h+='<br><br><b style="color:var(--text)">Även i:</b>';usedIn.slice(0,8).forEach(u=>{h+=`<br>• ${u}`})}
+    document.getElementById('cap-info').innerHTML=h;domBox.style.display='none';
+  }else if(m.type==='proc'){
+    const prioLabels={qw:'⚡ Quick win',se:'🎯 Strategisk effekt',sf:'🔮 Systemförändring'};
+    const prioCls={qw:'qw',se:'se',sf:'sf'};
+    desc.innerHTML=(m.desc||'')+(m.prio?'<br><span class="prio-badge '+prioCls[m.prio]+'">'+prioLabels[m.prio]+'</span>':'');
+    infoPanel.style.display='block';
+    const caps=node.children?node.children.filter(c=>c.meta?.type==='cap'):[];
+    statRow.innerHTML=`<div class="stat-box"><div class="stat-val">${caps.length}</div><div class="stat-lbl">Förmågor</div></div>`;
+    capBox.style.display='block';let h='';
+    caps.forEach(c=>{h+=`<div style="margin-bottom:8px"><b>${CN[c.meta.cap]||c.label.replace(/\n/g,' ')}</b><br><span style="font-size:10.5px">${c.meta.desc||''}</span></div>`});
+    document.getElementById('cap-info').innerHTML=h;domBox.style.display='none';
+  }else if(node.depth===2){
+    desc.textContent=m.desc||'';infoPanel.style.display='block';
+    const procs=node.children?node.children.filter(c=>c.meta?.type==='proc'):[];
+    const qwc=procs.filter(p=>p.meta.prio==='qw').length,sec=procs.filter(p=>p.meta.prio==='se').length,sfc=procs.filter(p=>p.meta.prio==='sf').length;
+    statRow.innerHTML=`<div class="stat-box"><div class="stat-val" style="color:var(--p-qw)">${qwc}</div><div class="stat-lbl">Quick win</div></div><div class="stat-box"><div class="stat-val" style="color:var(--p-se)">${sec}</div><div class="stat-lbl">Strategisk</div></div><div class="stat-box"><div class="stat-val" style="color:var(--p-sf)">${sfc}</div><div class="stat-lbl">System</div></div>`;
+    capBox.style.display='none';domBox.style.display='block';
+    const prioLabelsN={qw:'⚡ Quick win',se:'🎯 Strategisk effekt',sf:'🔮 Systemförändring'};
+    const prioCN={qw:'qw',se:'se',sf:'sf'};
+    let h='<b style="color:var(--text)">Kritiska processer:</b><br>';
+    procs.forEach(p=>{h+=`<div style="margin:6px 0"><b>${p.label.replace(/\n/g,' ')}</b>${p.meta.prio?'&ensp;<span class="prio-badge '+prioCN[p.meta.prio]+'">'+prioLabelsN[p.meta.prio]+'</span>':''}<br><span style="font-size:10.5px">${p.meta.desc||''}</span></div>`});
+    document.getElementById('dom-info').innerHTML=h;
+  }else if(node.depth===1){
+    desc.textContent=m.desc||'';infoPanel.style.display='block';
+    const needs=node.children||[];let procCount=0,capCount=0;
+    needs.forEach(b=>{if(b.children)b.children.forEach(p=>{if(p.meta?.type==='proc'){procCount++;if(p.children)capCount+=p.children.length}})});
+    statRow.innerHTML=`<div class="stat-box"><div class="stat-val">${needs.length}</div><div class="stat-lbl">Behov</div></div><div class="stat-box"><div class="stat-val">${procCount}</div><div class="stat-lbl">Processer</div></div><div class="stat-box"><div class="stat-val">${capCount}</div><div class="stat-lbl">Förmågor</div></div>`;
+    capBox.style.display='none';domBox.style.display='block';document.getElementById('dom-info').innerHTML=m.desc||'';
+  }else{
+    desc.textContent=m.desc||'';infoPanel.style.display='block';
+    statRow.innerHTML=`<div class="stat-box"><div class="stat-val" style="color:var(--p-qw)">22</div><div class="stat-lbl">Quick wins</div></div><div class="stat-box"><div class="stat-val" style="color:var(--p-se)">24</div><div class="stat-lbl">Strategiska</div></div><div class="stat-box"><div class="stat-val" style="color:var(--p-sf)">12</div><div class="stat-lbl">System</div></div>`;
+    capBox.style.display='none';domBox.style.display='none';
+  }
+}
+
+document.querySelectorAll('[data-dom]').forEach(el=>{el.addEventListener('click',function(){const d=this.dataset.dom;domVis[d]=!domVis[d];this.classList.toggle('active',domVis[d]);render()})});
+document.querySelectorAll('[data-prio]').forEach(el=>{el.addEventListener('click',function(){const p=this.dataset.prio;prioVis[p]=!prioVis[p];this.classList.toggle('active',prioVis[p]);render()})});
+document.getElementById('shared-toggle').addEventListener('click',function(){showShared=!showShared;this.classList.toggle('active',showShared);render()});
+const wrap=document.getElementById('canvas-wrap');let isPan=false,panS={x:0,y:0};
+wrap.addEventListener('mousedown',e=>{if(e.button!==0)return;isPan=true;panS={x:e.clientX,y:e.clientY};wrap.classList.add('dragging')});
+window.addEventListener('mousemove',e=>{if(!isPan)return;const dx=e.clientX-panS.x,dy=e.clientY-panS.y;panS={x:e.clientX,y:e.clientY};const r=svg.getBoundingClientRect();vb.x-=dx*(vb.w/r.width);vb.y-=dy*(vb.h/r.height);applyVB()});
+window.addEventListener('mouseup',()=>{isPan=false;wrap.classList.remove('dragging')});
+wrap.addEventListener('wheel',e=>{e.preventDefault();const f=e.deltaY>0?1.09:1/1.09;const r=svg.getBoundingClientRect();const mx=vb.x+((e.clientX-r.left)/r.width)*vb.w;const my=vb.y+((e.clientY-r.top)/r.height)*vb.h;vb.x=mx-(mx-vb.x)*f;vb.y=my-(my-vb.y)*f;vb.w*=f;vb.h*=f;applyVB()},{passive:false});
+wrap.addEventListener('dblclick',e=>{e.preventDefault();fitVB();applyVB()});
+document.getElementById('btn-reset-exp').addEventListener('click',resetExp);
+document.getElementById('btn-reset-view').addEventListener('click',()=>{fitVB();applyVB()});
+document.getElementById('btn-expand-all').addEventListener('click',expandAll);
+
+expandedIds.add('root');renderFit();updatePanel();
+</script>
+</body>
+</html>
